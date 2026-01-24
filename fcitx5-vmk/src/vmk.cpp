@@ -92,14 +92,10 @@ int uinput_fd_ = -1;
 int uinput_client_fd_ = -1;
 int them=0;
 
-std::string buildSocketPath(const char* base_path_suffix) {
-    const char* username_c = std::getenv("USER");
-
-    if (username_c == nullptr) {
-        return "/home/default_user" + std::string(base_path_suffix);
-    }
-
-    std::string path = "/home/" + std::string(username_c) + std::string(base_path_suffix);
+std::string buildSocketPath(const char *base_path_suffix) {
+    const char *username_c = std::getenv("USER");
+    std::string username = username_c ? std::string(username_c) : "default";
+    std::string path = "/dev/shm/vmksocket-" + username + "/" + std::string(base_path_suffix);
     return path;
 }
 
@@ -249,7 +245,7 @@ public:
 
     bool connect_uinput_server() {
         if (uinput_client_fd_ >= 0) return true;
-        BASE_SOCKET_PATH = buildSocketPath("/.vmksocket/kb_socket");
+        BASE_SOCKET_PATH = buildSocketPath("kb_socket");
         const std::string current_path = BASE_SOCKET_PATH;
         int current_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (current_fd < 0) return false;
@@ -827,7 +823,7 @@ private:
 
 void mousePressResetThread() {
     const std::string mouse_flag_path =
-        buildSocketPath("/.vmksocket/.mouse_flag");
+        buildSocketPath(".mouse_flag");
 
     struct stat st;
     const long STALE_MS = 2000;

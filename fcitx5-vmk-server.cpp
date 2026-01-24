@@ -24,7 +24,7 @@
 #include <unistd.h>
 namespace fs = std::filesystem;
 
-// ID sự kiện chuẩn từ file mẫu của Thành
+// event id for mouse event
 #define EV_DEVICE_ADDED 1
 #define EV_POINTER_BUTTON 402
 
@@ -32,7 +32,33 @@ static int uinput_fd_ = -1;
 static std::string MOUSE_FLAG_PATH;
 std::atomic<bool> stop_mouse_thread(false);
 
-// --------------------------- HÀM HỆ THỐNG ---------------------------
+// get username
+std::string get_current_username() {
+    struct passwd *pw = getpwuid(getuid());
+    return pw ? pw->pw_name : "unknown";
+}
+
+// setup environment in /dev/shm/vmksocket-<username>
+void setup_environment(std::string target_user) {
+    fs::path base_path = "/dev/shm/vmksocket-" + target_user;
+
+    try {
+        if (!fs::exists(base_path)) {
+            fs::create_directories(base_path);
+            fs::permissions(base_path, fs::perms::all,
+                            fs::perm_options::replace);
+        }
+
+        MOUSE_FLAG_PATH = (base_path / ".mouse_flag").string();
+        fs::remove(MOUSE_FLAG_PATH);
+
+    } catch (const std::exception &e) {
+        std::cerr << "Error when setup environment: " << e.what() << std::endl;
+        exit(1);
+    }
+}
+
+// system functions
 static void boost_process_priority() { setpriority(PRIO_PROCESS, 0, -10); }
 
 static void pin_to_pcore() {
@@ -50,7 +76,7 @@ static inline void sleep_us(long us) {
     clock_nanosleep(CLOCK_MONOTONIC, 0, &ts, nullptr);
 }
 
-// --------------------------- HÀM UINPUT INJECTOR ---------------------------
+// input injector functions
 void send_uinput_event(int type, int code, int value) {
     if (uinput_fd_ < 0)
         return;
@@ -62,7 +88,7 @@ void send_uinput_event(int type, int code, int value) {
     write(uinput_fd_, &ev, sizeof(ev));
 }
 
-// FIXED BACKSPACE: giữ phím lâu, bắn MSC_SCAN
+// FIXED BACKSPACE: hold left key, send MSC_SCAN
 void send_backspace_uinput(int count) {
     if (uinput_fd_ < 0)
         return;
@@ -71,7 +97,7 @@ void send_backspace_uinput(int count) {
     if (count > 10)
         count = 10;
 
-    const int INTER_KEY_DELAY_US = 1200; // 1ms giữa các backspace
+    const int INTER_KEY_DELAY_US = 1200; // 1ms between backspace
 
     for (int i = 0; i < count; ++i) {
         send_uinput_event(EV_KEY, KEY_BACKSPACE, 1);
@@ -83,8 +109,7 @@ void send_backspace_uinput(int count) {
         sleep_us(INTER_KEY_DELAY_US);
     }
 }
-// --------------------------- MOUSE MONITOR (LOGIC FILE MẪU)
-// ---------------------------
+// mouse monitor
 static const struct libinput_interface interface = {
     .open_restricted = [](const char *path, int flags, void *user_data) -> int {
         return open(path, flags);
@@ -96,14 +121,11 @@ void mousePressMonitorThread() {
     struct libinput *li = libinput_udev_create_context(&interface, NULL, udev);
     libinput_udev_assign_seat(li, "seat0");
 
-    // Biến lưu mốc thời gian cuối cùng ghi file
+    // save last write time
     auto last_write_time = std::chrono::steady_clock::now();
 
-    printf("--- SERVER: MONITORING (OPTIMIZED DISPATCH) ---\n");
-
     while (!stop_mouse_thread.load()) {
-        // Luôn luôn gọi dispatch để làm sạch hàng đợi, tránh lỗi "system too
-        // slow"
+        // clear pending events
         libinput_dispatch(li);
 
         struct libinput_event *event;
@@ -125,57 +147,47 @@ void mousePressMonitorThread() {
                     1) { // Pressed
 
                     auto now = std::chrono::steady_clock::now();
-                    // Tính khoảng cách thời gian từ lần ghi trước (ms)
+                    // calculate elapsed time
                     auto elapsed =
                         std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - last_write_time)
                             .count();
 
-                    // TĂNG DELAY LÊN 1000ms (1 GIÂY) THEO Ý THÀNH
+                    // delay 1000ms to avoid system too slow
                     if (elapsed >= 1000) {
                         std::ofstream flag(MOUSE_FLAG_PATH, std::ios::trunc);
                         if (flag.is_open()) {
                             flag << "Y=1\n";
                             flag.close();
-                            last_write_time = now; // Cập nhật mốc thời gian mới
-                            printf(">>> ĐÃ GHI FLAG Y=1 (Đã nghỉ đủ %ld ms)\n",
-                                   elapsed);
+                            last_write_time = now; // update last write time
+                            chmod(MOUSE_FLAG_PATH.c_str(), 0666);
                         }
                     } else {
-                        // Nếu chưa đủ 1s thì bỏ qua không ghi, nhưng event vẫn
-                        // được giải phóng printf("... Bỏ qua (mới qua %ld ms)
-                        // ...\n", elapsed);
                     }
                 }
             }
             libinput_event_destroy(event);
         }
-
-        // Nghỉ 5ms mỗi vòng lặp để giảm tải CPU xuống mức thấp nhất (~0.1%)
-        // 5ms vẫn cực nhanh để không bao giờ bị tràn buffer
+        // sleep 5ms to reduce CPU usage
         usleep(5000);
     }
     libinput_unref(li);
     udev_unref(udev);
 }
-// --------------------------- MAIN ---------------------------
+// main function
 int main(int argc, char *argv[]) {
-    if (argc != 3 || std::string(argv[1]) != "-u")
-        return 1;
+    std::string target_user;
+    if (argc == 3 && std::string(argv[1]) == "-u") {
+        target_user = argv[2];
+    } else {
+        target_user = get_current_username();
+    }
     boost_process_priority();
     pin_to_pcore();
 
-    std::string target_user = argv[2];
-    struct passwd *pw = getpwnam(target_user.c_str());
-    if (!pw)
-        return 1;
-
-    fs::path base_dir = std::string(pw->pw_dir) + "/.vmksocket";
-    fs::create_directories(base_dir);
-    (void)chown(base_dir.c_str(), pw->pw_uid, pw->pw_gid);
-
-    MOUSE_FLAG_PATH = (base_dir / ".mouse_flag").string();
-    std::string socket_path = (base_dir / "kb_socket").string();
+    setup_environment(target_user);
+    std::string socket_path =
+        ("/dev/shm/vmksocket-" + target_user + "/kb_socket");
 
     // Setup Uinput
     uinput_fd_ = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -193,13 +205,13 @@ int main(int argc, char *argv[]) {
     struct sockaddr_un addr{.sun_family = AF_UNIX};
     strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
     unlink(socket_path.c_str());
-    bind(server_fd, (struct sockaddr *)&addr, sizeof(addr));
-    chmod(socket_path.c_str(), 0666);
-    listen(server_fd, 5);
+    if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
+        chmod(socket_path.c_str(), 0666); // allow read/write
+        listen(server_fd, 5);
+    }
 
-    // Chạy luồng monitor chuột/touchpad
+    // Run mouse monitor thread
     std::thread(mousePressMonitorThread).detach();
-    printf("--- SERVER ĐANG CHẠY (QUÉT THIẾT BỊ OK) ---\n");
 
     while (true) {
         int client_fd = accept(server_fd, nullptr, nullptr);

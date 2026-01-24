@@ -1,0 +1,18 @@
+[Unit]
+Description=Fcitx5 VMK Server for %i
+After=multi-user.target udev.target
+
+[Service]
+User=uninput_proxy
+Group=input
+Environment=DATA_DIR=/dev/shm/vmksocket-%i
+Type=simple
+
+ExecStartPre=/usr/bin/mkdir -pm 777 /dev/shm/vmksocket-%i
+ExecStart=/usr/bin/fcitx5-vmk-server -u %i
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
