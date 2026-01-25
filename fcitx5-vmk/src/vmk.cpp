@@ -38,6 +38,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <filesystem>
 
 #include <dirent.h>
 #include <errno.h>
