@@ -12,7 +12,6 @@ include(ECMUninstallTarget)
 
 # 2. Tìm các gói phụ thuộc (Đã bỏ Gettext)
 find_package(Fcitx5Core ${REQUIRED_FCITX_VERSION} REQUIRED)
-find_package(Fcitx5Module REQUIRED COMPONENTS TestFrontend)
 find_package(Pthread REQUIRED)
 find_package(X11 REQUIRED)
 include("${FCITX_INSTALL_CMAKECONFIG_DIR}/Fcitx5Utils/Fcitx5CompilerSettings.cmake")
