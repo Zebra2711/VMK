@@ -59,7 +59,8 @@ jobs:
         files: fcitx5-vmk-${{ github.ref_name }}.tar.gz
         name: Release ${{ github.ref_name }}
         tag_name: ${{ github.ref }}
-        draft: false
+        allowUpdates: true
+        draft: true
         prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
