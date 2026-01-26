@@ -13,3 +13,20 @@ cscope.*
 XF86keysym.h
 keysymdef.h
 *~
+
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+ecm_uninstall.cmake
+install_manifest.txt
+Makefile
+CMakeConfigureLog.yaml
+
+# Build artifacts
+*.a
+*.o
+*.so
+*.so.*
+*.la
+*.lo
