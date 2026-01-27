@@ -64,6 +64,47 @@ paru -S fcitx5-vmk-bin
 paru -S fcitx5-vmk-git
 ```
 
+### NixOS
+
+Thêm input của fcitx5-vmk vào `flake.nix`:
+
+```
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    fcitx5-vmk = {
+      url = "github:nhktmdzhg/VMK";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = {
+    self,
+  ...
+}
+```
+
+Bật fcitx5-vmk service trong `configuration.nix`:
+
+```
+{
+  inputs,
+  ...
+}: {
+  imports = [
+    inputs.fcitx5-vmk.nixosModules.fcitx5-vmk
+  ];
+
+  services.fcitx5-vmk = {
+    enable = true;
+    user = "your_username"; # Sửa thành tên user của bạn
+  };
+}
+```
+
+Rebuild lại system để cài đặt.
+
 ### Các Distro khác (Ubuntu/Fedora/Debian/openSUSE) và Arch Linux/Arch-based distro (systemd)
 
 Bạn có thể cài đặt fcitx5-vmk thông qua Open Build Service (OBS), nơi cung cấp các package đã được biên dịch sẵn cho nhiều distro khác nhau.
