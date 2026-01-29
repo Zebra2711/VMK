@@ -814,34 +814,68 @@ private:
 };
 
 void mousePressResetThread() {
-    const std::string mouse_flag_path =
-        buildSocketPath(".mouse_flag");
-
-    struct stat st;
-    const long STALE_MS = 2000;
+    const std::string mouse_socket_path = buildSocketPath("mouse_socket");
 
     while (!stop_flag_monitor.load(std::memory_order_relaxed)) {
-
-        if (stat(mouse_flag_path.c_str(), &st) == 0) {
-            struct timespec now;
-            clock_gettime(CLOCK_MONOTONIC, &now);
-
-            long age_ms =
-                (now.tv_sec - st.st_mtim.tv_sec) * 1000 +
-                (now.tv_nsec - st.st_mtim.tv_nsec) / 1000000;
-
-            if (age_ms < STALE_MS) {
-                Y.store(1, std::memory_order_relaxed);
-                // Also signal that mouse was clicked to close app mode menu
-                g_mouse_clicked.store(true, std::memory_order_relaxed);
-            }
-
-            unlink(mouse_flag_path.c_str());
-
-            usleep(1000);
+        int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (sock < 0) {
+            sleep(1);
+            continue;
         }
 
-        usleep(50000);
+        struct sockaddr_un addr{.sun_family = AF_UNIX};
+        strncpy(addr.sun_path, mouse_socket_path.c_str(),
+                sizeof(addr.sun_path) - 1);
+
+        // Connect to socket
+        if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+            close(sock);
+            sleep(1); // Wait for socket to be ready
+            continue;
+        }
+
+        struct pollfd pfd;
+        pfd.fd = sock;
+        pfd.events = POLLIN;
+
+        while (!stop_flag_monitor.load(std::memory_order_relaxed)) {
+            int ret = poll(&pfd, 1, -1);
+
+            if (ret > 0 && (pfd.revents & POLLIN)) {
+                char buf[16];
+                ssize_t n = recv(sock, buf, sizeof(buf), 0);
+
+                if (n <= 0) {
+                    break;
+                }
+
+                // Check app name
+                struct ucred cred;
+                socklen_t len = sizeof(struct ucred);
+                char comm[64] = {0};
+                if (getsockopt(sock, SOL_SOCKET, SO_PEERCRED, &cred, &len) ==
+                    0) {
+                    char path[64];
+                    snprintf(path, sizeof(path), "/proc/%d/comm", cred.pid);
+                    FILE *fp = fopen(path, "r");
+                    if (fp) {
+                        if (fgets(comm, sizeof(comm), fp)) {
+                            comm[strcspn(comm, "\n")] = 0;
+                        }
+                        fclose(fp);
+                    }
+                }
+
+                if (n > 0 && std::string(comm) == "fcitx5-vmk-serv") {
+                    Y.store(1, std::memory_order_relaxed);
+                    // Also signal that mouse was clicked to close app mode menu
+                    g_mouse_clicked.store(true, std::memory_order_relaxed);
+                }
+            } else if (ret < 0 && errno != EINTR) {
+                break;
+            }
+        }
+        close(sock);
     }
 }
 

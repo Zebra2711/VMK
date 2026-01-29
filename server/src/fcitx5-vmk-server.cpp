@@ -23,33 +23,11 @@ namespace fs = std::filesystem;
 
 // --- VARIABLES ---
 static int uinput_fd_ = -1;
-static std::string MOUSE_FLAG_PATH;
 
 // get username
 std::string get_current_username() {
     struct passwd *pw = getpwuid(getuid());
     return pw ? pw->pw_name : "unknown";
-}
-
-// setup environment in /run/vmksocket-<username>
-void setup_environment(std::string target_user) {
-    char *env_dir = getenv("DATA_DIR");
-    fs::path base_path = env_dir ? env_dir : ("/run/vmksocket-" + target_user);
-
-    try {
-        if (!fs::exists(base_path)) {
-            fs::create_directories(base_path);
-            fs::permissions(base_path, fs::perms::all,
-                            fs::perm_options::replace);
-        }
-
-        MOUSE_FLAG_PATH = (base_path / ".mouse_flag").string();
-        fs::remove(MOUSE_FLAG_PATH);
-
-    } catch (const std::exception &e) {
-        std::cerr << "Error when setup environment: " << e.what() << std::endl;
-        exit(1);
-    }
 }
 
 // system functions
@@ -124,8 +102,10 @@ int main(int argc, char *argv[]) {
     boost_process_priority();
     pin_to_pcore();
 
-    setup_environment(target_user);
-    std::string socket_path = ("/run/vmksocket-" + target_user + "/kb_socket");
+    std::string backspace_socket =
+        ("/run/vmksocket-" + target_user + "/kb_socket");
+    std::string mouse_flag_socket =
+        ("/run/vmksocket-" + target_user + "/mouse_socket");
 
     // Setup Uinput
     uinput_fd_ = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
@@ -140,16 +120,36 @@ int main(int argc, char *argv[]) {
 
     int server_fd =
         socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0); // Non-blocking socket
-    struct sockaddr_un addr{.sun_family = AF_UNIX};
-    strncpy(addr.sun_path, socket_path.c_str(), sizeof(addr.sun_path) - 1);
-    unlink(socket_path.c_str());
+    int mouse_server_fd =
+        socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0); // Non-blocking socket
 
-    if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+    struct sockaddr_un addr_kb{.sun_family = AF_UNIX};
+    struct sockaddr_un addr_mouse{.sun_family = AF_UNIX};
+
+    strncpy(addr_kb.sun_path, backspace_socket.c_str(),
+            sizeof(addr_kb.sun_path) - 1);
+    strncpy(addr_mouse.sun_path, mouse_flag_socket.c_str(),
+            sizeof(addr_mouse.sun_path) - 1);
+
+    unlink(backspace_socket.c_str());
+    unlink(mouse_flag_socket.c_str());
+
+    if (bind(server_fd, (struct sockaddr *)&addr_kb, sizeof(addr_kb)) != 0) {
         std::cerr << "Failed to bind socket" << std::endl;
         return 1;
     }
-    chmod(socket_path.c_str(), 0666);
+
+    if (bind(mouse_server_fd, (struct sockaddr *)&addr_mouse,
+             sizeof(addr_mouse)) != 0) {
+        std::cerr << "Failed to bind socket" << std::endl;
+        return 1;
+    }
+
+    chmod(backspace_socket.c_str(), 0666);
+    chmod(mouse_flag_socket.c_str(), 0666);
+
     listen(server_fd, 5);
+    listen(mouse_server_fd, 5);
 
     // 6. Setup Libinput (Mouse Monitor)
     struct udev *udev = udev_new();
@@ -157,11 +157,15 @@ int main(int argc, char *argv[]) {
     libinput_udev_assign_seat(li, "seat0");
     int li_fd = libinput_get_fd(li);
 
-    std::vector<struct pollfd> fds(2);
+    std::vector<struct pollfd> fds(3);
     fds[0].fd = server_fd;
     fds[0].events = POLLIN;
     fds[1].fd = li_fd;
     fds[1].events = POLLIN;
+    fds[2].fd = mouse_server_fd;
+    fds[2].events = POLLIN;
+
+    int addon_fd = -1;
 
     while (true) {
         int ret = poll(fds.data(), fds.size(), -1);
@@ -212,6 +216,17 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        // connect to mouse socket
+        if (fds[2].revents & POLLIN) {
+            int new_fd = accept(mouse_server_fd, nullptr, nullptr);
+            if (new_fd >= 0) {
+                if (addon_fd >= 0)
+                    close(addon_fd);
+                addon_fd = new_fd;
+                fcntl(addon_fd, F_SETFL, O_NONBLOCK);
+            }
+        }
+
         // handle mouse (libinput)
         if (fds[1].revents & POLLIN) {
             libinput_dispatch(li); // Update internal state
@@ -237,12 +252,12 @@ int main(int argc, char *argv[]) {
                     if (libinput_event_pointer_get_button_state(p) ==
                         LIBINPUT_BUTTON_STATE_PRESSED) {
 
-                        // write flag to ramfs
-                        int flag_fd = open(MOUSE_FLAG_PATH.c_str(),
-                                           O_CREAT | O_WRONLY | O_TRUNC, 0666);
-                        if (flag_fd >= 0) {
-                            write(flag_fd, "Y=1\n", 4);
-                            close(flag_fd);
+                        // send flag through socket
+                        if (addon_fd >= 0) {
+                            if (send(addon_fd, "C", 1, MSG_NOSIGNAL) < 0) {
+                                close(addon_fd);
+                                addon_fd = -1;
+                            }
                         }
                     }
                 }
@@ -259,7 +274,10 @@ int main(int argc, char *argv[]) {
         close(uinput_fd_);
     }
     close(server_fd);
-    unlink(MOUSE_FLAG_PATH.c_str());
+    close(mouse_server_fd);
+
+    unlink(backspace_socket.c_str());
+    unlink(mouse_flag_socket.c_str());
 
     return 0;
 }
