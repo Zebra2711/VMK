@@ -144,6 +144,7 @@ class vmkEngine final : public InputMethodEngine {
     void saveAppRules();
     void showAppModeMenu(InputContext *ic);
     void closeAppModeMenu();
+    VMKMode getGlobalMode() const { return globalMode_; }
 
   private:
     bool freeMarkingValue_ = true;
@@ -181,6 +182,7 @@ class vmkEngine final : public InputMethodEngine {
     std::string appRulesPath_;
     bool isSelectingAppMode_ = false;
     std::string currentConfigureApp_;
+    VMKMode globalMode_;
 };
 
 class vmkFactory : public AddonFactory {

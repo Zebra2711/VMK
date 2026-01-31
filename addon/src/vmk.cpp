@@ -814,21 +814,25 @@ vmkEngine::vmkEngine(Instance *instance)
     modeMenu_ = std::make_unique<Menu>();
     modeAction_->setMenu(modeMenu_.get());
 
-    std::vector<std::string> modes = {"vmk1", "vmk2", "vmkpre", "vmk1hc"};
+    std::vector<fcitx::VMKMode> modes = {
+        fcitx::VMKMode::VMK1, fcitx::VMKMode::VMK2, fcitx::VMKMode::Preedit,
+        fcitx::VMKMode::VMK1HC};
     for (const auto &mId : modes) {
         auto action = std::make_unique<SimpleAction>();
-        action->setShortText(mId);
+        action->setShortText(modeEnumToString(mId));
         action->setCheckable(true);
-        uiManager.registerAction("vmk-mode-" + mId, action.get());
+        uiManager.registerAction("vmk-mode-" + modeEnumToString(mId),
+                                 action.get());
         connections_.emplace_back(action->connect<SimpleAction::Activated>(
             [this, mId](InputContext *ic) {
-                if (config_.mode.value() == mId) {
+                if (globalMode_ == mId) {
                     return;
                 }
 
-                config_.mode.setValue(mId);
+                config_.mode.setValue(modeEnumToString(mId));
                 saveConfig();
-                E = fcitx::modeStringToEnum(mId);
+                E = mId;
+                globalMode_ = mId;
                 reloadConfig();
                 updateModeAction(ic);
                 if (ic) {
@@ -987,6 +991,7 @@ vmkEngine::vmkEngine(Instance *instance)
     uiManager.registerAction("vmk-freemarking", freeMarkingAction_.get());
 
     reloadConfig();
+    globalMode_ = modeStringToEnum(config_.mode.value());
     updateModeAction(nullptr);
     instance_->inputContextManager().registerProperty("VMKState", &factory_);
 
@@ -1081,7 +1086,7 @@ void vmkEngine::activate(const InputMethodEntry &entry,
     if (!appRules_.empty() && appRules_.count(appName)) {
         targetMode = appRules_[appName];
     } else {
-        targetMode = modeStringToEnum(config_.mode.value());
+        targetMode = globalMode_;
     }
     reloadConfig();
     updateModeAction(event.inputContext());
@@ -1248,6 +1253,7 @@ void vmkEngine::refreshOption() {
 void vmkEngine::updateModeAction(InputContext *ic) {
     std::string currentModeStr = config_.mode.value();
     E = fcitx::modeStringToEnum(currentModeStr);
+    globalMode_ = E;
 
     for (const auto &action : modeSubAction_) {
         action->setChecked(action->name() == "vmk-mode-" + currentModeStr);
@@ -1391,7 +1397,7 @@ void vmkEngine::showAppModeMenu(InputContext *ic) {
     if (appRules_.count(currentConfigureApp_)) {
         currentAppRules = appRules_[currentConfigureApp_];
     } else {
-        currentAppRules = fcitx::modeStringToEnum(config_.mode.value());
+        currentAppRules = globalMode_;
     }
 
     auto getLabel = [&](const fcitx::VMKMode &modeName,
