@@ -78,9 +78,24 @@ std::string BASE_SOCKET_PATH_TEST;
 static const int MAX_SOCKET_ATTEMPTS = 10;
 // Global flag to signal mouse click for closing app mode menu
 static std::atomic<bool> g_mouse_clicked{false};
-// Global flags for Chrome and Gemini detection
-static bool isChrome = false;
+// Global flag for Gemini detection
 static bool isGemini = false;
+
+// Helper function to convert mode string to int
+static int modeStringToInt(const std::string &mode) {
+    if (mode == "vmk1")
+        return 1;
+    else if (mode == "vmk2")
+        return 2;
+    else if (mode == "vmkpre")
+        return 3;
+    else if (mode == "vmk1hc")
+        return 4;
+    else if (mode == "Off")
+        return 0;
+    else
+        return 1;
+}
 
 std::atomic<int> is_deleting_{0};
 static std::string getLastUtf8Char(const std::string &str);
@@ -437,38 +452,6 @@ class VMKState final : public InputContextProperty {
         return false;
     }
 
-    bool isChromiumX11(fcitx::InputContext *ic, fcitx::Instance *instance) {
-        (void)instance;
-        if (!ic)
-            return false;
-
-        std::string appName = ic->program();
-
-        // fprintf(stderr, "[vmk-debug] App: '%s' | FrontEnd: %s\n",
-        // appName.c_str(),
-        // ic->frontend());
-
-        if (appName.empty()) {
-
-            return false;
-        }
-
-        for (auto &c : appName)
-            c = std::tolower(static_cast<unsigned char>(c));
-
-        static const std::vector<std::string> keywords = {
-            "chrome",  "chromium", "brave", "edge",
-            "vivaldi", "opera",    "coccoc"};
-
-        for (const auto &kw : keywords) {
-            if (appName.find(kw) != std::string::npos) {
-                // fprintf(stderr, "[vmk-match] Đã tìm thấy trình duyệt: %s\n",
-                // appName.c_str());
-                return true;
-            }
-        }
-        return false;
-    }
     bool isOnlySingleWordBeforeCursor(fcitx::InputContext *ic) {
         if (!ic)
             return false;
@@ -499,6 +482,180 @@ class VMKState final : public InputContextProperty {
         return true;
     }
 
+    // Helper function for preedit mode
+    void handlePreeditMode(KeyEvent &keyEvent) {
+        if (EngineProcessKeyEvent(vmkEngine_.handle(), keyEvent.rawKey().sym(),
+                                  keyEvent.rawKey().states()))
+            keyEvent.filterAndAccept();
+        if (char *commit = EnginePullCommit(vmkEngine_.handle())) {
+            if (commit[0])
+                ic_->commitString(commit);
+            free(commit);
+        }
+        ic_->inputPanel().reset();
+        UniqueCPtr<char> preedit(EnginePullPreedit(vmkEngine_.handle()));
+        if (preedit && preedit.get()[0]) {
+            std::string_view view = preedit.get();
+            Text text;
+            TextFormatFlags fmt = TextFormatFlag::NoFlag;
+            if (utf8::validate(view))
+                text.append(std::string(view), fmt);
+            text.setCursor(text.textLength());
+            if (ic_->capabilityFlags().test(CapabilityFlag::Preedit))
+                ic_->inputPanel().setClientPreedit(text);
+            else
+                ic_->inputPanel().setPreedit(text);
+        }
+        ic_->updatePreedit();
+        ic_->updateUserInterface(UserInterfaceComponent::InputPanel);
+    }
+
+    // Helper function for vmk1/vmk1hc mode
+    void handleUinputMode(KeyEvent &keyEvent, fcitx::KeySym currentSym,
+                          bool checkEmptyPreedit) {
+        if (!is_deleting_.load()) {
+            if (isBackspace(currentSym) || currentSym == FcitxKey_space ||
+                currentSym == FcitxKey_Return) {
+                if (isBackspace(currentSym)) {
+                    history_ += "\\b\\";
+                    replayBufferToEngine(history_);
+                    UniqueCPtr<char> preeditC(
+                        EnginePullPreedit(vmkEngine_.handle()));
+                    oldPreBuffer_ =
+                        (preeditC && preeditC.get()[0]) ? preeditC.get() : "";
+                } else {
+                    history_.clear();
+                    ResetEngine(vmkEngine_.handle());
+                    oldPreBuffer_.clear();
+                }
+                keyEvent.forward();
+                return;
+            }
+        } else {
+            if (isBackspace(currentSym) && is_deleting_) {
+                if (handleUInputKeyPress(keyEvent, currentSym))
+                    return;
+                return;
+            }
+            keyEvent.filterAndAccept();
+            return;
+        }
+        if (!is_deleting_.load()) {
+            if (uinput_fd_ < 0)
+                setup_uinput();
+            if (!EngineProcessKeyEvent(vmkEngine_.handle(), currentSym,
+                                       keyEvent.rawKey().states())) {
+                if (checkEmptyPreedit) {
+                    UniqueCPtr<char> preeditC(
+                        EnginePullPreedit(vmkEngine_.handle()));
+                    std::string preeditStr =
+                        (preeditC && preeditC.get()[0]) ? preeditC.get() : "";
+                    if (preeditStr.empty()) {
+                        history_.clear();
+                        oldPreBuffer_.clear();
+                        keyEvent.forward();
+                    }
+                }
+                return;
+            }
+            if (currentSym >= 32 && currentSym <= 126) {
+                history_ += static_cast<char>(currentSym);
+            } else {
+                keyEvent.forward();
+                return;
+            }
+            replayBufferToEngine(history_);
+            if (auto commitF =
+                    UniqueCPtr<char>(EnginePullCommit(vmkEngine_.handle()));
+                commitF && commitF.get()[0]) {
+                history_.clear();
+                ResetEngine(vmkEngine_.handle());
+                oldPreBuffer_.clear();
+                return;
+            }
+            keyEvent.filterAndAccept();
+            UniqueCPtr<char> preeditC(EnginePullPreedit(vmkEngine_.handle()));
+            std::string preeditStr =
+                (preeditC && preeditC.get()[0]) ? preeditC.get() : "";
+            std::string same, Adif, Bdif;
+            if (compareAndSplitStrings(oldPreBuffer_, preeditStr, same, Adif,
+                                       Bdif)) {
+                if (Adif.empty()) {
+                    if (!Bdif.empty()) {
+                        ic_->commitString(Bdif);
+                        oldPreBuffer_ = preeditStr;
+                    }
+                } else {
+                    current_backspace_count_ = 0;
+                    pending_commit_string_ = Bdif;
+                    oldPreBuffer_ = preeditStr;
+                    if (uinput_client_fd_ < 0) {
+                        std::string rawKey = keyEvent.key().toString();
+                        if (!rawKey.empty()) {
+                            ic_->commitString(rawKey);
+                        }
+                        return;
+                    }
+                    if (isAutofillCertain(ic_->surroundingText()))
+                        them = 1;
+
+                    if (isGemini && same == "" &&
+                        isOnlySingleWordBeforeCursor(ic_) &&
+                        !isAutofillCertain(ic_->surroundingText())) {
+                        ic_->deleteSurroundingText(-(fcitx::utf8::length(Adif)),
+                                                   (fcitx::utf8::length(Adif)));
+                        ic_->commitString(Bdif);
+                        expected_backspaces_ = 0;
+                        current_backspace_count_ = -1;
+                        pending_commit_string_ = "";
+                        is_deleting_.store(0);
+                        return;
+                    }
+                    if (is_deleting_.load() == 1) {
+                        is_deleting_.store(0);
+                    }
+
+                    expected_backspaces_ = fcitx::utf8::length(Adif) + 1 + them;
+                    if (expected_backspaces_ > 0)
+                        is_deleting_.store(1);
+                    send_backspace_uinput(expected_backspaces_);
+                    int my_id = ++current_thread_id_;
+
+                    std::thread([this, my_id]() {
+                        auto start = std::chrono::steady_clock::now();
+
+                        while (is_deleting_.load() == 1) {
+                            if (current_thread_id_.load() != my_id) {
+                                return;
+                            }
+
+                            std::this_thread::sleep_for(
+                                std::chrono::milliseconds(5));
+
+                            auto now = std::chrono::steady_clock::now();
+                            if (std::chrono::duration_cast<
+                                    std::chrono::milliseconds>(now - start)
+                                    .count() > 200) {
+                                break;
+                            }
+                        }
+
+                        if (current_thread_id_.load() == my_id) {
+                            if (!pending_commit_string_.empty()) {
+                                ic_->commitString(pending_commit_string_);
+                                pending_commit_string_ = "";
+                            }
+                            is_deleting_.store(0);
+                        }
+                    }).detach();
+
+                    them = 0;
+                }
+            }
+            return;
+        }
+    }
+
     void keyEvent(KeyEvent &keyEvent) {
         if (!vmkEngine_ || keyEvent.isRelease())
             return;
@@ -523,314 +680,10 @@ class VMKState final : public InputContextProperty {
             keyEvent.rawKey().check(FcitxKey_Shift_R))
             return;
         const fcitx::KeySym currentSym = keyEvent.rawKey().sym();
-        if (isChrome) {
-            if (EngineProcessKeyEvent(vmkEngine_.handle(),
-                                      keyEvent.rawKey().sym(),
-                                      keyEvent.rawKey().states()))
-                keyEvent.filterAndAccept();
-            if (char *commit = EnginePullCommit(vmkEngine_.handle())) {
-                if (commit[0])
-                    ic_->commitString(commit);
-                free(commit);
-            }
-            ic_->inputPanel().reset();
-            UniqueCPtr<char> preedit(EnginePullPreedit(vmkEngine_.handle()));
-            if (preedit && preedit.get()[0]) {
-                std::string_view view = preedit.get();
-                Text text;
-                TextFormatFlags fmt = TextFormatFlag::NoFlag;
-                if (utf8::validate(view))
-                    text.append(std::string(view), fmt);
-                text.setCursor(text.textLength());
-                if (ic_->capabilityFlags().test(CapabilityFlag::Preedit))
-                    ic_->inputPanel().setClientPreedit(text);
-                else
-                    ic_->inputPanel().setPreedit(text);
-            }
-            ic_->updatePreedit();
-            ic_->updateUserInterface(UserInterfaceComponent::InputPanel);
-            return;
-        }
-
         if (E == 1) {
-            if (!is_deleting_.load()) {
-                if (isBackspace(currentSym) || currentSym == FcitxKey_space ||
-                    currentSym == FcitxKey_Return) {
-                    if (isBackspace(currentSym)) {
-                        history_ += "\\b\\";
-                        replayBufferToEngine(history_);
-                        UniqueCPtr<char> preeditC(
-                            EnginePullPreedit(vmkEngine_.handle()));
-                        oldPreBuffer_ = (preeditC && preeditC.get()[0])
-                                            ? preeditC.get()
-                                            : "";
-                    } else {
-                        history_.clear();
-                        ResetEngine(vmkEngine_.handle());
-                        oldPreBuffer_.clear();
-                    }
-                    keyEvent.forward();
-                    return;
-                }
-            } else {
-                if (isBackspace(currentSym) && is_deleting_) {
-                    if (handleUInputKeyPress(keyEvent, currentSym))
-                        return;
-                    return;
-                }
-                keyEvent.filterAndAccept();
-                return;
-            }
-            if (!is_deleting_.load()) {
-                if (uinput_fd_ < 0)
-                    setup_uinput();
-                if (!EngineProcessKeyEvent(vmkEngine_.handle(), currentSym,
-                                           keyEvent.rawKey().states())) {
-                    UniqueCPtr<char> preeditC(
-                        EnginePullPreedit(vmkEngine_.handle()));
-                    std::string preeditStr =
-                        (preeditC && preeditC.get()[0]) ? preeditC.get() : "";
-                    if (preeditStr.empty()) {
-                        history_.clear();
-                        oldPreBuffer_.clear();
-                        keyEvent.forward();
-                    }
-                    return;
-                }
-                if (currentSym >= 32 && currentSym <= 126) {
-                    history_ += static_cast<char>(currentSym);
-                } else {
-                    keyEvent.forward();
-                    return;
-                }
-                replayBufferToEngine(history_);
-                if (auto commitF =
-                        UniqueCPtr<char>(EnginePullCommit(vmkEngine_.handle()));
-                    commitF && commitF.get()[0]) {
-                    history_.clear();
-                    ResetEngine(vmkEngine_.handle());
-                    oldPreBuffer_.clear();
-                    return;
-                }
-                keyEvent.filterAndAccept();
-                UniqueCPtr<char> preeditC(
-                    EnginePullPreedit(vmkEngine_.handle()));
-                std::string preeditStr =
-                    (preeditC && preeditC.get()[0]) ? preeditC.get() : "";
-                std::string same, Adif, Bdif;
-                if (compareAndSplitStrings(oldPreBuffer_, preeditStr, same,
-                                           Adif, Bdif)) {
-                    if (Adif.empty()) {
-                        if (!Bdif.empty()) {
-                            ic_->commitString(Bdif);
-                            oldPreBuffer_ = preeditStr;
-                        }
-                    } else {
-                        current_backspace_count_ = 0;
-                        pending_commit_string_ = Bdif;
-                        oldPreBuffer_ = preeditStr;
-                        if (uinput_client_fd_ < 0) {
-                            std::string rawKey = keyEvent.key().toString();
-                            if (!rawKey.empty()) {
-                                ic_->commitString(rawKey);
-                            }
-                            return;
-                        }
-                        if (isAutofillCertain(ic_->surroundingText()))
-                            them = 1;
-
-                        if (isGemini && same == "" &&
-                            isOnlySingleWordBeforeCursor(ic_) &&
-                            !isAutofillCertain(ic_->surroundingText())) {
-                            ic_->deleteSurroundingText(
-                                -(fcitx::utf8::length(Adif)),
-                                (fcitx::utf8::length(Adif)));
-                            ic_->commitString(Bdif);
-                            expected_backspaces_ = 0;
-                            current_backspace_count_ = -1;
-                            pending_commit_string_ = "";
-                            is_deleting_.store(0);
-                            return;
-                        }
-                        if (is_deleting_.load() == 1) {
-                            is_deleting_.store(0);
-                        }
-
-                        expected_backspaces_ =
-                            fcitx::utf8::length(Adif) + 1 + them;
-                        if (expected_backspaces_ > 0)
-                            is_deleting_.store(1);
-                        send_backspace_uinput(expected_backspaces_);
-                        int my_id = ++current_thread_id_;
-
-                        std::thread([this, my_id]() {
-                            auto start = std::chrono::steady_clock::now();
-
-                            while (is_deleting_.load() == 1) {
-                                if (current_thread_id_.load() != my_id) {
-                                    return;
-                                }
-
-                                std::this_thread::sleep_for(
-                                    std::chrono::milliseconds(5));
-
-                                auto now = std::chrono::steady_clock::now();
-                                if (std::chrono::duration_cast<
-                                        std::chrono::milliseconds>(now - start)
-                                        .count() > 200) {
-                                    break;
-                                }
-                            }
-
-                            if (current_thread_id_.load() == my_id) {
-                                if (!pending_commit_string_.empty()) {
-                                    ic_->commitString(pending_commit_string_);
-                                    pending_commit_string_ = "";
-                                }
-                                is_deleting_.store(0);
-                            }
-                        }).detach();
-
-                        them = 0;
-                    }
-                }
-                return;
-            }
+            handleUinputMode(keyEvent, currentSym, true);
         } else if (E == 4) {
-            if (!is_deleting_.load()) {
-                if (isBackspace(currentSym) || currentSym == FcitxKey_space ||
-                    currentSym == FcitxKey_Return) {
-                    if (isBackspace(currentSym)) {
-                        history_ += "\\b\\";
-                        replayBufferToEngine(history_);
-                        UniqueCPtr<char> preeditC(
-                            EnginePullPreedit(vmkEngine_.handle()));
-                        oldPreBuffer_ = (preeditC && preeditC.get()[0])
-                                            ? preeditC.get()
-                                            : "";
-                    } else {
-                        history_.clear();
-                        ResetEngine(vmkEngine_.handle());
-                        oldPreBuffer_.clear();
-                    }
-                    keyEvent.forward();
-                    return;
-                }
-            } else {
-                if (isBackspace(currentSym) && is_deleting_) {
-                    if (handleUInputKeyPress(keyEvent, currentSym))
-                        return;
-                    return;
-                }
-                keyEvent.filterAndAccept();
-                return;
-            }
-            if (!is_deleting_.load()) {
-                if (uinput_fd_ < 0)
-                    setup_uinput();
-                if (!EngineProcessKeyEvent(vmkEngine_.handle(), currentSym,
-                                           keyEvent.rawKey().states())) {
-                    return;
-                }
-                if (currentSym >= 32 && currentSym <= 126) {
-                    history_ += static_cast<char>(currentSym);
-                } else {
-                    keyEvent.forward();
-                    return;
-                }
-                replayBufferToEngine(history_);
-                if (auto commitF =
-                        UniqueCPtr<char>(EnginePullCommit(vmkEngine_.handle()));
-                    commitF && commitF.get()[0]) {
-                    history_.clear();
-                    ResetEngine(vmkEngine_.handle());
-                    oldPreBuffer_.clear();
-                    return;
-                }
-                keyEvent.filterAndAccept();
-                UniqueCPtr<char> preeditC(
-                    EnginePullPreedit(vmkEngine_.handle()));
-                std::string preeditStr =
-                    (preeditC && preeditC.get()[0]) ? preeditC.get() : "";
-                std::string same, Adif, Bdif;
-                if (compareAndSplitStrings(oldPreBuffer_, preeditStr, same,
-                                           Adif, Bdif)) {
-                    if (Adif.empty()) {
-                        if (!Bdif.empty()) {
-                            ic_->commitString(Bdif);
-                            oldPreBuffer_ = preeditStr;
-                        }
-                    } else {
-                        current_backspace_count_ = 0;
-                        pending_commit_string_ = Bdif;
-                        oldPreBuffer_ = preeditStr;
-                        if (uinput_client_fd_ < 0) {
-                            std::string rawKey = keyEvent.key().toString();
-                            if (!rawKey.empty()) {
-                                ic_->commitString(rawKey);
-                            }
-                            return;
-                        }
-                        if (isAutofillCertain(ic_->surroundingText()))
-                            them = 1;
-
-                        if (isGemini && same == "" &&
-                            isOnlySingleWordBeforeCursor(ic_) &&
-                            !isAutofillCertain(ic_->surroundingText())) {
-                            ic_->deleteSurroundingText(
-                                -(fcitx::utf8::length(Adif)),
-                                (fcitx::utf8::length(Adif)));
-                            ic_->commitString(Bdif);
-                            expected_backspaces_ = 0;
-                            current_backspace_count_ = -1;
-                            pending_commit_string_ = "";
-                            is_deleting_.store(0);
-                            return;
-                        }
-                        if (is_deleting_.load() == 1) {
-                            is_deleting_.store(0);
-                        }
-
-                        expected_backspaces_ =
-                            fcitx::utf8::length(Adif) + 1 + them;
-                        if (expected_backspaces_ > 0)
-                            is_deleting_.store(1);
-                        send_backspace_uinput(expected_backspaces_);
-                        int my_id = ++current_thread_id_;
-
-                        std::thread([this, my_id]() {
-                            auto start = std::chrono::steady_clock::now();
-
-                            while (is_deleting_.load() == 1) {
-                                if (current_thread_id_.load() != my_id) {
-                                    return;
-                                }
-
-                                std::this_thread::sleep_for(
-                                    std::chrono::milliseconds(5));
-
-                                auto now = std::chrono::steady_clock::now();
-                                if (std::chrono::duration_cast<
-                                        std::chrono::milliseconds>(now - start)
-                                        .count() > 200) {
-                                    break;
-                                }
-                            }
-
-                            if (current_thread_id_.load() == my_id) {
-                                if (!pending_commit_string_.empty()) {
-                                    ic_->commitString(pending_commit_string_);
-                                    pending_commit_string_ = "";
-                                }
-                                is_deleting_.store(0);
-                            }
-                        }).detach();
-
-                        them = 0;
-                    }
-                }
-                return;
-            }
+            handleUinputMode(keyEvent, currentSym, false);
         } else if (E == 2) {
             auto ic = keyEvent.inputContext();
             if (!ic)
@@ -863,31 +716,7 @@ class VMKState final : public InputContextProperty {
             }
             return;
         } else if (E == 3) {
-            if (EngineProcessKeyEvent(vmkEngine_.handle(),
-                                      keyEvent.rawKey().sym(),
-                                      keyEvent.rawKey().states()))
-                keyEvent.filterAndAccept();
-            if (char *commit = EnginePullCommit(vmkEngine_.handle())) {
-                if (commit[0])
-                    ic_->commitString(commit);
-                free(commit);
-            }
-            ic_->inputPanel().reset();
-            UniqueCPtr<char> preedit(EnginePullPreedit(vmkEngine_.handle()));
-            if (preedit && preedit.get()[0]) {
-                std::string_view view = preedit.get();
-                Text text;
-                TextFormatFlags fmt = TextFormatFlag::NoFlag;
-                if (utf8::validate(view))
-                    text.append(std::string(view), fmt);
-                text.setCursor(text.textLength());
-                if (ic_->capabilityFlags().test(CapabilityFlag::Preedit))
-                    ic_->inputPanel().setClientPreedit(text);
-                else
-                    ic_->inputPanel().setPreedit(text);
-            }
-            ic_->updatePreedit();
-            ic_->updateUserInterface(UserInterfaceComponent::InputPanel);
+            handlePreeditMode(keyEvent);
         }
     }
 
@@ -1063,14 +892,7 @@ vmkEngine::vmkEngine(Instance *instance)
                     return;
                 config_.mode.setValue(mId);
                 saveConfig();
-                if (mId == "vmk1")
-                    E = 1;
-                else if (mId == "vmk2")
-                    E = 2;
-                else if (mId == "vmkpre")
-                    E = 3;
-                else if (mId == "vmk1hc")
-                    E = 4;
+                E = modeStringToInt(mId);
                 reloadConfig();
                 updateModeAction(ic);
                 if (ic)
@@ -1320,9 +1142,8 @@ void vmkEngine::activate(const InputMethodEntry &entry,
     if (!mouseThreadStarted.exchange(true))
         startMouseReset();
 
-    // Detect Chrome and Gemini
+    // Detect Gemini
     auto state = ic->propertyFor(&factory_);
-    isChrome = state->isChromiumX11(ic, instance_);
     isGemini = state->isChromeRichText(ic);
 
     auto &statusArea = event.inputContext()->statusArea();
@@ -1339,17 +1160,7 @@ void vmkEngine::activate(const InputMethodEntry &entry,
         targetMode = config_.mode.value();
     }
 
-    int newE;
-    if (targetMode == "vmk1")
-        newE = 1;
-    else if (targetMode == "vmk2")
-        newE = 2;
-    else if (targetMode == "vmkpre")
-        newE = 3;
-    else if (targetMode == "vmk1hc")
-        newE = 4;
-    else
-        newE = 0;
+    int newE = modeStringToInt(targetMode);
 
     reloadConfig();
     updateModeAction(event.inputContext());
@@ -1434,16 +1245,7 @@ void vmkEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &keyEvent) {
             appRules_[currentConfigureApp_] = selectedMode;
             saveAppRules();
 
-            if (selectedMode == "Off")
-                E = 0;
-            else if (selectedMode == "vmk1")
-                E = 1;
-            else if (selectedMode == "vmk2")
-                E = 2;
-            else if (selectedMode == "vmkpre")
-                E = 3;
-            else if (selectedMode == "vmk1hc")
-                E = 4;
+            E = modeStringToInt(selectedMode);
 
             modeAction_->setShortText(selectedMode);
             selectionMade = true;
@@ -1530,16 +1332,7 @@ void vmkEngine::updateModeAction(InputContext *ic) {
         if (ic)
             action->update(ic);
     }
-    if (currentMode == "vmk1")
-        E = 1;
-    else if (currentMode == "vmk2")
-        E = 2;
-    else if (currentMode == "vmkpre")
-        E = 3;
-    else if (currentMode == "vmk1hc")
-        E = 4;
-    else
-        E = 1;
+    E = modeStringToInt(currentMode);
     if (ic) {
         modeAction_->setLongText("Chế độ: " + currentMode);
         modeAction_->update(ic);
