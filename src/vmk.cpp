@@ -332,18 +332,35 @@ namespace fcitx {
                 return false;
             }
 
-            int cursor = s.cursor();
-            int anchor = s.anchor();
+            const int    cursor  = s.cursor();
+            const auto&  text    = s.text();
+            const size_t textLen = fcitx_utf8_strlen(text.c_str());
 
-            if (cursor != anchor) {
-                int selectionStart = std::min(anchor, cursor);
-                int selectionEnd   = std::max(anchor, cursor);
+            if (textLen <= realtextLen)
+                realtextLen = textLen;
 
-                if (selectionStart >= cursor || (selectionStart < cursor && selectionEnd > cursor)) {
-                    return true;
-                }
+            // abc|[def.gh]
+            // ab|c[def.gh]
+            // when press tab realtextLen increase more than one
+            // abc{def.gh}|
+            // abc    |
+            if (textLen == static_cast<size_t>(cursor)) {
+                realtextLen = textLen;
+                return false;
             }
 
+            // Now we only alow that suggest when cursor is in
+            // the end of realtext
+            if (textLen > static_cast<size_t>(cursor) && realtextLen < textLen)
+                return true;
+
+            // User press tab
+            // TODO: does this correct
+            // abc|def -> abc    |def     in IDE?
+            // realtextlen is calc wrong = 4
+            // correct is 10
+            if (realtextLen < static_cast<size_t>(cursor))
+                realtextLen == static_cast<size_t>(cursor);
             return false;
         }
 
@@ -496,6 +513,7 @@ namespace fcitx {
 
             if (currentSym >= 32 && currentSym <= 126) {
                 emojiBuffer_ += static_cast<char>(currentSym);
+                realtextLen += 1;
                 keyEvent.filterAndAccept();
                 updateEmojiPreedit();
             } else {
@@ -607,6 +625,8 @@ namespace fcitx {
                         replayBufferToEngine(history_);
                         UniqueCPtr<char> preeditC(EnginePullPreedit(vmkEngine_.handle()));
                         oldPreBuffer_ = (preeditC && preeditC.get()[0]) ? preeditC.get() : "";
+                        if (realtextLen > 0)
+                            realtextLen -= 1;
                     } else {
                         history_.clear();
                         ResetEngine(vmkEngine_.handle());
@@ -635,6 +655,16 @@ namespace fcitx {
                     static_cast<uint32_t>(KeyState::Ctrl) | static_cast<uint32_t>(KeyState::Alt) | static_cast<uint32_t>(KeyState::Super) | static_cast<uint32_t>(KeyState::Hyper);
 
                 if (isNavigation || keyEvent.key().states() & shortcutMask) {
+                    // User press tab,?
+                    // TODO: does this correct
+                    // abc|def -> abc    |def     in IDE?
+                    // realtextlen is calc wrong = 4
+                    // correct is 10
+                    auto surrounding = ic_->surroundingText();
+                    if (surrounding.isValid()) {
+                        size_t textLen = fcitx_utf8_strlen(surrounding.text().c_str());
+                        realtextLen    = textLen;
+                    }
                     keyEvent.forward();
                     return;
                 }
@@ -675,6 +705,7 @@ namespace fcitx {
                 }
                 if (currentSym >= 32 && currentSym <= 126) {
                     history_ += static_cast<char>(currentSym);
+                    realtextLen += 1;
                 } else {
                     keyEvent.forward();
                     return;
@@ -798,6 +829,8 @@ namespace fcitx {
         void reset() {
             is_deleting_.store(false);
             clearAllBuffers();
+            const auto& text = (ic_->surroundingText()).text();
+            realtextLen      = fcitx_utf8_strlen(text.c_str());
 
             switch (realMode) {
                 case fcitx::VMKMode::Preedit: {
@@ -886,6 +919,7 @@ namespace fcitx {
         CGoObject        vmkEngine_;
         std::string      oldPreBuffer_;
         std::string      history_;
+        size_t           realtextLen              = 0;
         size_t           expected_backspaces_     = 0;
         size_t           current_backspace_count_ = 0;
         std::string      pending_commit_string_;
