@@ -1531,21 +1531,21 @@ namespace fcitx {
 
         auto getLabel = [&](const fcitx::VMKMode& modeName, const std::string& modeLabel) {
             if (modeName == currentAppRules) {
-                return Text(modeLabel + " (Default)");
+                return Text(modeLabel + _(" (Default)"));
             } else {
                 return Text(modeLabel);
             }
         };
 
-        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(Text("App name detected by fcitx5: " + currentConfigureApp_)));
-        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::VMK1, "1. Fake backspace by Uinput")));
-        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::VMK2, "2. Surrounding Text")));
-        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::Preedit, "3. Preedit")));
-        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::VMK1HC, "4. VMK1HC")));
+        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(Text(_("App name detected by fcitx5: ") + currentConfigureApp_)));
+        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::VMK1, _("1. Fake backspace by Uinput"))));
+        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::VMK2, _("2. Surrounding Text"))));
+        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::Preedit, _("3. Preedit"))));
+        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::VMK1HC, _("4. Fake backspace by Uinput for wine apps"))));
         candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(getLabel(fcitx::VMKMode::Off, "5. OFF - Disable Input Method")));
-        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(Text("6. Remove app settings")));
-        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(Text("7. Emoji mode")));
-        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(Text("`. Close menu and type `")));
+        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(Text(_("6. Remove app settings"))));
+        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(Text(_("7. Emoji mode"))));
+        candidateList->append(std::make_unique<DisplayOnlyCandidateWord>(Text(_("`. Close menu and type `"))));
 
         ic->inputPanel().reset();
         ic->inputPanel().setCandidateList(std::move(candidateList));
