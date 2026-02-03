@@ -1,0 +1,27 @@
+--- src/vmk.cpp
++++ src/vmk.cpp
+@@ -513,6 +530,7 @@ namespace fcitx {
+ 
+             if (currentSym >= 32 && currentSym <= 126) {
+                 emojiBuffer_ += static_cast<char>(currentSym);
++                realtextLen += 1;
+                 keyEvent.filterAndAccept();
+                 updateEmojiPreedit();
+             } else {
+@@ -654,6 +674,16 @@ namespace fcitx {
+                     static_cast<uint32_t>(KeyState::Ctrl) | static_cast<uint32_t>(KeyState::Alt) | static_cast<uint32_t>(KeyState::Super) | static_cast<uint32_t>(KeyState::Hyper);
+ 
+                 if (isNavigation || keyEvent.key().states() & shortcutMask) {
++                    // User press tab,?
++                    // TODO: does this correct
++                    // abc|def -> abc    |def     in IDE?
++                    // realtextlen is calc wrong = 4
++                    // correct is 10
++                    auto surrounding = ic_->surroundingText();
++                    if (surrounding.isValid()) {
++                        size_t textLen = fcitx_utf8_strlen(surrounding.text().c_str());
++                        realtextLen    = textLen;
++                    }
+                     keyEvent.forward();
+                     return;
+                 }
