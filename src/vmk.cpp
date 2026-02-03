@@ -897,6 +897,10 @@ namespace fcitx {
                 ResetEngine(vmkEngine_.handle());
         }
 
+        bool isEmptyHistory() {
+            return history_.empty();
+        }
+
       private:
         struct EmojiCandidateWord : public CandidateWord {
             VMKState*   state_;
@@ -1379,6 +1383,10 @@ namespace fcitx {
 
     void vmkEngine::reset(const InputMethodEntry& entry, InputContextEvent& event) {
         auto state = event.inputContext()->propertyFor(&factory_);
+        if (!state->isEmptyHistory() && event.type() != EventType::InputContextFocusOut) {
+            return;
+        }
+
         state->reset();
     }
 
