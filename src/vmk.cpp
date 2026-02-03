@@ -622,8 +622,16 @@ namespace fcitx {
 
         // Helper function for vmk1/vmk1hc/vmksmooth mode
         void handleUinputMode(KeyEvent& keyEvent, KeySym currentSym, bool checkEmptyPreedit, int sleepTime) {
-            if (keyEvent.key().isCursorMove() || keyEvent.key().hasModifier() || currentSym == FcitxKey_Tab || currentSym == FcitxKey_ISO_Left_Tab ||
-                currentSym == FcitxKey_Delete || currentSym == FcitxKey_Escape) {
+            if (keyEvent.key().isCursorMove() || currentSym == FcitxKey_Tab || currentSym == FcitxKey_ISO_Left_Tab || currentSym == FcitxKey_Escape ||
+                keyEvent.key().hasModifier()) {
+                history_.clear();
+                ResetEngine(vmkEngine_.handle());
+                oldPreBuffer_.clear();
+                keyEvent.forward();
+                return;
+            }
+
+            if (currentSym == FcitxKey_Delete) {
                 keyEvent.forward();
                 return;
             }

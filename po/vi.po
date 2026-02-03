@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: nhktmdzhg@gmail.com\n"
-"POT-Creation-Date: 2026-02-03 19:33+0700\n"
+"POT-Creation-Date: 2026-02-03 21:18+0700\n"
 "PO-Revision-Date: 2026-02-03 19:05+0700\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -46,126 +46,126 @@ msgstr "Kiểu gõ"
 msgid "Output Charset"
 msgstr "Bảng mã"
 
-#: src/vmk-config.h:141 src/vmk.cpp:1108
+#: src/vmk-config.h:141 src/vmk.cpp:1116
 msgid "Enable spell check"
 msgstr "Bật kiểm tra chính tả"
 
-#: src/vmk-config.h:141 src/vmk.cpp:1120
+#: src/vmk-config.h:141 src/vmk.cpp:1128
 msgid "Enable Macro"
 msgstr "Bật gõ tắt"
 
-#: src/vmk-config.h:142 src/vmk.cpp:1132
+#: src/vmk-config.h:142 src/vmk.cpp:1140
 msgid "Capitalize Macro"
 msgstr "Gõ tắt chữ hoa"
 
-#: src/vmk-config.h:143 src/vmk.cpp:1144
+#: src/vmk-config.h:143 src/vmk.cpp:1152
 msgid "Auto restore keys with invalid words"
 msgstr "Tự động khôi phục phím với từ sai"
 
-#: src/vmk-config.h:144 src/vmk.cpp:1156
+#: src/vmk-config.h:144 src/vmk.cpp:1164
 msgid "Use oà, _uý (instead of òa, úy)"
 msgstr "Dùng oà, _uý (thay vì òa, úy)"
 
-#: src/vmk-config.h:145 src/vmk.cpp:1168
+#: src/vmk-config.h:145 src/vmk.cpp:1176
 msgid "Allow type with more freedom"
 msgstr "Cho phép gõ dấu tự do"
 
-#: src/vmk.cpp:1023
+#: src/vmk.cpp:1031
 msgid "Typing Mode"
 msgstr "Chế độ gõ"
 
-#: src/vmk.cpp:1080
+#: src/vmk.cpp:1088
 msgid "Charset"
 msgstr "Bảng mã"
 
-#: src/vmk.cpp:1477
+#: src/vmk.cpp:1485
 msgid "Typing Mode: "
 msgstr "Chế độ gõ: "
 
-#: src/vmk.cpp:1508
+#: src/vmk.cpp:1516
 msgid "Spell Check: On"
 msgstr "Kiểm tra chính tả: Bật"
 
-#: src/vmk.cpp:1508
+#: src/vmk.cpp:1516
 msgid "Spell Check: Off"
 msgstr "Kiểm tra chính tả: Tắt"
 
-#: src/vmk.cpp:1516
+#: src/vmk.cpp:1524
 msgid "Macro: On"
 msgstr "Phím tắt: Bật"
 
-#: src/vmk.cpp:1516
+#: src/vmk.cpp:1524
 msgid "Macro: Off"
 msgstr "Phím tắt: Tắt"
 
-#: src/vmk.cpp:1524
+#: src/vmk.cpp:1532
 msgid "Capitalize Macro: On"
 msgstr "Gõ tắt chữ hoa: Bật"
 
-#: src/vmk.cpp:1524
+#: src/vmk.cpp:1532
 msgid "Capitalize Macro: Off"
 msgstr "Gõ tắt chữ hoa: Tắt"
 
-#: src/vmk.cpp:1532
+#: src/vmk.cpp:1540
 msgid "Auto Non-VN Restore: On"
 msgstr "Tự động khôi phục với từ sai: Bật"
 
-#: src/vmk.cpp:1532
+#: src/vmk.cpp:1540
 msgid "Auto Non-VN Restore: Off"
 msgstr "Tự động khôi phục với từ sai: Tắt"
 
-#: src/vmk.cpp:1540
+#: src/vmk.cpp:1548
 msgid "Modern Style: On"
 msgstr "Dấu chuẩn: Bật"
 
-#: src/vmk.cpp:1540
+#: src/vmk.cpp:1548
 msgid "Modern Style: Off"
 msgstr "Dấu chuẩn: Tắt"
 
-#: src/vmk.cpp:1548
+#: src/vmk.cpp:1556
 msgid "Free Marking: On"
 msgstr "Dấu tự do: Bật"
 
-#: src/vmk.cpp:1548
+#: src/vmk.cpp:1556
 msgid "Free Marking: Off"
 msgstr "Dấu tự do: Tắt"
 
-#: src/vmk.cpp:1608
+#: src/vmk.cpp:1616
 msgid " (Default)"
 msgstr " (Mặc định)"
 
-#: src/vmk.cpp:1614
+#: src/vmk.cpp:1622
 msgid "App name detected by fcitx5: "
 msgstr "Tên ứng dụng nhận dạng bởi fcitx5: "
 
-#: src/vmk.cpp:1615
+#: src/vmk.cpp:1623
 msgid "1. Fake backspace by Uinput (smooth)"
 msgstr "1. Phím xóa giả bởi uinput (mượt)"
 
-#: src/vmk.cpp:1616
+#: src/vmk.cpp:1624
 msgid "2. Fake backspace by Uinput"
 msgstr "2. Phím xóa giả bởi uinput"
 
-#: src/vmk.cpp:1617
+#: src/vmk.cpp:1625
 msgid "3. Fake backspace by Uinput for wine apps"
 msgstr "3. Phím xóa giả, dùng cho ứng dụng wine"
 
-#: src/vmk.cpp:1618
+#: src/vmk.cpp:1626
 msgid "4. Surrounding Text"
 msgstr "4. Văn bản xung quanh"
 
-#: src/vmk.cpp:1619
+#: src/vmk.cpp:1627
 msgid "5. Preedit"
 msgstr "5. Gạch chân"
 
-#: src/vmk.cpp:1620
+#: src/vmk.cpp:1628
 msgid "6. Emoji mode"
 msgstr "6. Chế độ emoji"
 
-#: src/vmk.cpp:1622
+#: src/vmk.cpp:1630
 msgid "8. Remove app settings"
 msgstr "8. Xóa cài đặt ứng dụng"
 
-#: src/vmk.cpp:1623
+#: src/vmk.cpp:1631
 msgid "`. Close menu and type `"
 msgstr "`. Đóng menu và gõ `"
