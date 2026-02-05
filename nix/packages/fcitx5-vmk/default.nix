@@ -16,14 +16,14 @@
 }:
 stdenv.mkDerivation rec {
   pname = "fcitx5-vmk";
-  version = "0.9.4.1";
+  version = "0.11.0";
 
   src = fetchFromGitHub {
     owner = "nhktmdzhg";
     repo = "VMK";
     rev = "v${version}";
     fetchSubmodules = true;
-    sha256 = "sha256-fnDvwcJJzfVlobAMubRDCovqJR9BjrzZsvcuHFmRG74=";
+    sha256 = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
   };
 
   nativeBuildInputs = [
