@@ -612,10 +612,9 @@ namespace fcitx {
             }
         }
 
-        // Helper function for vmk1/vmk1hc/vmksmooth mode
-        void handleUinputMode(KeyEvent& keyEvent, KeySym currentSym, bool checkEmptyPreedit, int sleepTime) {
-            if (keyEvent.key().isCursorMove() || currentSym == FcitxKey_Tab || currentSym == FcitxKey_ISO_Left_Tab || currentSym == FcitxKey_Escape ||
-                keyEvent.key().hasModifier()) {
+        void checkForwardSpecialKey(KeyEvent& keyEvent, KeySym& currentSym) {
+            if (keyEvent.key().isCursorMove() || currentSym == FcitxKey_Tab || currentSym == FcitxKey_KP_Tab || currentSym == FcitxKey_ISO_Left_Tab ||
+                currentSym == FcitxKey_Escape || keyEvent.key().hasModifier()) {
                 history_.clear();
                 ResetEngine(vmkEngine_.handle());
                 oldPreBuffer_.clear();
@@ -628,6 +627,50 @@ namespace fcitx {
                 return;
             }
 
+            if (currentSym >= FcitxKey_KP_0 && currentSym <= FcitxKey_KP_9) {
+                currentSym = static_cast<KeySym>(FcitxKey_0 + (currentSym - FcitxKey_KP_0));
+            }
+
+            switch (currentSym) {
+                case FcitxKey_KP_Add: {
+                    currentSym = FcitxKey_plus;
+                    break;
+                }
+                case FcitxKey_KP_Subtract: {
+                    currentSym = FcitxKey_minus;
+                    break;
+                }
+                case FcitxKey_KP_Divide: {
+                    currentSym = FcitxKey_slash;
+                    break;
+                }
+                case FcitxKey_KP_Multiply: {
+                    currentSym = FcitxKey_asterisk;
+                    break;
+                }
+                case FcitxKey_KP_Decimal: {
+                    currentSym = FcitxKey_period;
+                    break;
+                }
+                case FcitxKey_KP_Enter: {
+                    currentSym = FcitxKey_Return;
+                    break;
+                }
+                case FcitxKey_KP_Equal: {
+                    currentSym = FcitxKey_equal;
+                    break;
+                }
+                case FcitxKey_KP_Space: {
+                    currentSym = FcitxKey_space;
+                    break;
+                }
+                default: break;
+            }
+        }
+
+        // Helper function for vmk1/vmk1hc/vmksmooth mode
+        void handleUinputMode(KeyEvent& keyEvent, KeySym currentSym, bool checkEmptyPreedit, int sleepTime) {
+            checkForwardSpecialKey(keyEvent, currentSym);
             if (is_deleting_.load(std::memory_order_acquire)) {
                 if (isBackspace(currentSym)) {
                     if (handleUInputKeyPress(keyEvent, currentSym, sleepTime)) {
@@ -738,7 +781,8 @@ namespace fcitx {
             }
         }
 
-        void handleSurroundingText(KeyEvent& keyEvent) {
+        void handleSurroundingText(KeyEvent& keyEvent, KeySym currentSym) {
+            checkForwardSpecialKey(keyEvent, currentSym);
             auto ic = keyEvent.inputContext();
             if (!ic || !ic->capabilityFlags().test(CapabilityFlag::SurroundingText)) {
                 keyEvent.forward();
@@ -905,7 +949,7 @@ namespace fcitx {
                     break;
                 }
                 case VMKMode::VMK2: {
-                    handleSurroundingText(keyEvent);
+                    handleSurroundingText(keyEvent, currentSym);
                     break;
                 }
                 case VMKMode::Preedit: {
