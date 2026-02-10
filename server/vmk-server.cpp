@@ -158,6 +158,7 @@ int main(int argc, char* argv[]) {
     fds.push_back({server_fd, POLLIN, 0});
     fds.push_back({li_fd, POLLIN, 0});
     fds.push_back({mouse_server_fd, POLLIN, 0});
+    fds.push_back({-1, POLLIN, 0});
 
     int addon_fd           = -1;
     int pending_backspaces = 0;
@@ -201,7 +202,10 @@ int main(int argc, char* argv[]) {
                 }
 
                 if (strcmp(exe_path, "/usr/bin/fcitx5") == 0) {
-                    fds.push_back({client_fd, POLLIN, 0});
+                    if (fds[3].fd >= 0) {
+                        close(fds[3].fd);
+                    }
+                    fds[3].fd = client_fd;
                 } else {
                     close(client_fd);
                 }
@@ -209,14 +213,13 @@ int main(int argc, char* argv[]) {
         }
 
         // handle connect from addon
-        for (size_t i = 3; i < fds.size(); ++i) {
-            if (fds[i].revents & (POLLIN | POLLHUP | POLLERR)) {
-                int     count = 0;
-                ssize_t n     = recv(fds[i].fd, &count, sizeof(count), 0);
+        if (fds[3].revents & (POLLIN | POLLHUP | POLLERR)) {
+            int count = 0;
+            if (fds[3].fd >= 0) {
+                ssize_t n = recv(fds[3].fd, &count, sizeof(count), 0);
                 if (n <= 0) {
-                    close(fds[i].fd);
-                    fds.erase(fds.begin() + i);
-                    --i;
+                    close(fds[3].fd);
+                    fds[3].fd = -1;
                 } else {
                     if (count > 10) {
                         count = 10;
@@ -250,7 +253,7 @@ int main(int argc, char* argv[]) {
                     if (libinput_event_pointer_get_button_state(p) == LIBINPUT_BUTTON_STATE_PRESSED) {
                         // send flag through socket
                         if (addon_fd >= 0) {
-                            send(addon_fd, "C", 1, MSG_NOSIGNAL);
+                            send(addon_fd, "C", 1, MSG_NOSIGNAL | MSG_DONTWAIT);
                         }
                     }
                 } else if (type == LIBINPUT_EVENT_DEVICE_ADDED) {
