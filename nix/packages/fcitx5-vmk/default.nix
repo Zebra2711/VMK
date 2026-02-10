@@ -10,7 +10,7 @@
   hicolor-icon-theme,
   fcitx5,
   libinput,
-  xorg,
+  libx11,
   libcap,
   udev,
 }:
@@ -23,7 +23,7 @@ stdenv.mkDerivation rec {
     repo = "VMK";
     rev = "v${version}";
     fetchSubmodules = true;
-    sha256 = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    sha256 = "sha256-fSu3kAobMTQyWioWdYp/LndTTbJTo7ZSMrRfCdspQR0=";
   };
 
   nativeBuildInputs = [
@@ -38,7 +38,7 @@ stdenv.mkDerivation rec {
   buildInputs = [
     fcitx5
     libinput
-    xorg.libX11
+    libx11
     libcap
     udev
   ];
@@ -60,15 +60,18 @@ stdenv.mkDerivation rec {
 
   # change checking exe_path logic to make it work on NixOS since executable files on NixOS are not located in /usr/bin
   postPatch = ''
+    substituteInPlace src/vmk.cpp \
+      --replace-fail 'strcmp(exe_path, "/usr/bin/fcitx5-vmk-server") == 0' \
+                '(strncmp(exe_path, "/nix/store/", 22) == 0 && strlen(exe_path) >= 22 && strcmp(exe_path + strlen(exe_path) - 22, "/bin/fcitx5-vmk-server") == 0)'
     substituteInPlace server/vmk-server.cpp \
-      --replace 'strcmp(exe_path, "/usr/bin/fcitx5") == 0' \
+      --replace-fail 'strcmp(exe_path, "/usr/bin/fcitx5") == 0' \
                 '(strncmp(exe_path, "/nix/store/", 11) == 0 && strlen(exe_path) >= 11 && strcmp(exe_path + strlen(exe_path) - 11, "/bin/fcitx5") == 0)'
   '';
 
   postInstall = ''
     if [ -d "$out/lib/systemd/system" ]; then
       substituteInPlace $out/lib/systemd/system/fcitx5-vmk-server@.service \
-        --replace "/usr/bin/fcitx5-vmk-server" "$out/bin/fcitx5-vmk-server"
+        --replace-fail "/usr/bin/fcitx5-vmk-server" "$out/bin/fcitx5-vmk-server"
     fi
   '';
 
