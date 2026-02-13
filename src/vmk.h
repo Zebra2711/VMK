@@ -82,6 +82,11 @@ namespace fcitx {
 
     class VMKState;
 
+    struct AppRule {
+        fcitx::VMKMode mode;
+        bool           wait_ack;
+    };
+
     class vmkEngine final : public InputMethodEngine {
       public:
         Instance* instance() const {
@@ -187,12 +192,12 @@ namespace fcitx {
         std::vector<ScopedConnection>                     connections_;
         CGoObject                                         dictionary_;
         // ibus-bamboo mode save/load
-        std::unordered_map<std::string, fcitx::VMKMode> appRules_;
-        std::string                                     appRulesPath_;
-        bool                                            isSelectingAppMode_ = false;
-        std::string                                     currentConfigureApp_;
-        VMKMode                                         globalMode_;
-        EmojiLoader                                     emojiLoader_;
+        std::unordered_map<std::string, AppRule> appRules_;
+        std::string                              appRulesPath_;
+        bool                                     isSelectingAppMode_ = false;
+        std::string                              currentConfigureApp_;
+        VMKMode                                  globalMode_;
+        EmojiLoader                              emojiLoader_;
     };
 
     class vmkFactory : public AddonFactory {

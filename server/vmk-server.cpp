@@ -27,8 +27,17 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <vector>
+#include <csignal>
+#include <atomic>
+
 // --- VARIABLES ---
 static int uinput_fd_ = -1;
+static std::atomic<bool> g_running(true);
+
+static void signal_handler(int signum) {
+    (void)signum;
+    g_running.store(false);
+}
 
 // get username
 std::string get_current_username() {
@@ -102,6 +111,9 @@ static const struct libinput_interface interface = {
 
 // MAIN FUNCTION
 int main(int argc, char* argv[]) {
+    signal(SIGTERM, signal_handler);
+    signal(SIGINT, signal_handler);
+
     std::string target_user;
     if (argc == 3 && strcmp(argv[1], "-u") == 0) {
         target_user = argv[2];
@@ -128,10 +140,15 @@ int main(int argc, char* argv[]) {
     if (uinput_fd_ >= 0) {
         ioctl(uinput_fd_, UI_SET_EVBIT, EV_KEY);
         ioctl(uinput_fd_, UI_SET_KEYBIT, KEY_BACKSPACE);
-        struct uinput_user_dev uidev{};
-        snprintf(uidev.name, UINPUT_MAX_NAME_SIZE, "Fcitx5_Uinput_Server");
-        (void)write(uinput_fd_, &uidev, sizeof(uidev));
+        struct uinput_setup usetup;
+        memset(&usetup, 0, sizeof(usetup));
+        usetup.id.bustype = BUS_USB;
+        usetup.id.vendor  = 0x1234;
+        usetup.id.product = 0x5678;
+        strncpy(usetup.name, "Fcitx5_Uinput_Server", UINPUT_MAX_NAME_SIZE - 1);
+        ioctl(uinput_fd_, UI_DEV_SETUP, &usetup);
         ioctl(uinput_fd_, UI_DEV_CREATE);
+        sleep(1);
     }
 
     int                server_fd       = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0); // Non-blocking socket
@@ -180,16 +197,45 @@ int main(int argc, char* argv[]) {
 
     int addon_fd = -1;
 
-    while (true) {
+    while (g_running.load()) {
         int ret = poll(fds.data(), fds.size(), -1);
 
         if (ret < 0) {
             // if error, continue
             if (errno == EINTR)
                 continue;
+            std::cerr << "poll failed, exiting" << std::endl;
             break; // real error
         }
+        if (fds[1].revents & POLLIN) {
+            if (libinput_dispatch(li) < 0) {
+                std::cerr << "libinput_dispatch failed, exiting" << std::endl;
+                break;
+            }
+            struct libinput_event* event;
+            while ((event = libinput_get_event(li))) {
+                enum libinput_event_type type = libinput_event_get_type(event);
 
+                if (type == LIBINPUT_EVENT_DEVICE_ADDED) {
+                    struct libinput_device* dev = libinput_event_get_device(event);
+                    if (libinput_device_config_tap_get_finger_count(dev) > 0) {
+                        libinput_device_config_tap_set_enabled(dev, LIBINPUT_CONFIG_TAP_ENABLED);
+                        libinput_device_config_tap_set_button_map(dev, LIBINPUT_CONFIG_TAP_MAP_LRM);
+                    }
+                } else if (type == LIBINPUT_EVENT_POINTER_BUTTON) {
+                    struct libinput_event_pointer* p = libinput_event_get_pointer_event(event);
+                    if (libinput_event_pointer_get_button_state(p) == LIBINPUT_BUTTON_STATE_PRESSED) {
+                        if (addon_fd >= 0) {
+                            if (send(addon_fd, "C", 1, MSG_NOSIGNAL) < 0) {
+                                close(addon_fd);
+                                addon_fd = -1;
+                            }
+                        }
+                    }
+                }
+                libinput_event_destroy(event);
+            }
+        }
         // handle socket (backspace)
         if (fds[0].revents & POLLIN) {
             int client_fd = accept(server_fd, nullptr, nullptr);
@@ -230,42 +276,11 @@ int main(int argc, char* argv[]) {
                 fcntl(addon_fd, F_SETFL, O_NONBLOCK);
             }
         }
-
-        // handle mouse (libinput)
-        if (fds[1].revents & POLLIN) {
-            libinput_dispatch(li); // Update internal state
-            struct libinput_event* event;
-
-            while ((event = libinput_get_event(li))) {
-                enum libinput_event_type type = libinput_event_get_type(event);
-
-                if (type == LIBINPUT_EVENT_DEVICE_ADDED) {
-                    // add new device
-                    struct libinput_device* dev = libinput_event_get_device(event);
-                    if (libinput_device_config_tap_get_finger_count(dev) > 0) {
-                        libinput_device_config_tap_set_enabled(dev, LIBINPUT_CONFIG_TAP_ENABLED);
-                        libinput_device_config_tap_set_button_map(dev, LIBINPUT_CONFIG_TAP_MAP_LRM);
-                    }
-                } else if (type == LIBINPUT_EVENT_POINTER_BUTTON) {
-                    struct libinput_event_pointer* p = libinput_event_get_pointer_event(event);
-                    // only when pressed
-                    if (libinput_event_pointer_get_button_state(p) == LIBINPUT_BUTTON_STATE_PRESSED) {
-
-                        // send flag through socket
-                        if (addon_fd >= 0) {
-                            if (send(addon_fd, "C", 1, MSG_NOSIGNAL) < 0) {
-                                close(addon_fd);
-                                addon_fd = -1;
-                            }
-                        }
-                    }
-                }
-                libinput_event_destroy(event);
-            }
-        }
     }
 
     // Cleanup
+    if (addon_fd >= 0)
+        close(addon_fd);
     libinput_unref(li);
     udev_unref(udev);
     if (uinput_fd_ >= 0) {
