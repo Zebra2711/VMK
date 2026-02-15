@@ -77,6 +77,7 @@ std::atomic<bool>        stop_flag_monitor{false};
 std::atomic<bool>        monitor_running{false};
 int                      uinput_client_fd_ = -1;
 int                      realtextLen       = 0;
+std::atomic<int>         mouse_socket_fd{-1};
 
 std::atomic<int64_t>     replacement_start_ms_{0};
 std::atomic<int>         replacement_thread_id_{0};
@@ -625,27 +626,12 @@ namespace fcitx {
             int my_id                = ++current_thread_id_;
             current_backspace_count_ = 0;
             pending_commit_string_   = addedPart;
-
-            int extraBackspace = 0;
-
-            if (isAutofillCertain(ic_->surroundingText()))
-                extraBackspace = 1;
-            else
-                extraBackspace = 0;
-
-            expected_backspaces_ = utf8::length(deletedPart) + 1 + extraBackspace;
-
-            if (expected_backspaces_ > 0) {
-                replacement_thread_id_.store(my_id, std::memory_order_release);
-                replacement_start_ms_.store(now_ms(), std::memory_order_release);
-                is_deleting_.store(true, std::memory_order_release);
-                monitor_cv.notify_one();
-                send_backspace_uinput(expected_backspaces_);
-            } else {
-                if (!addedPart.empty()) {
-                    ic_->commitString(addedPart);
-                }
-            }
+            expected_backspaces_     = utf8::length(deletedPart) + 1 + (isAutofillCertain(ic_->surroundingText()) ? 1 : 0);
+            replacement_thread_id_.store(my_id, std::memory_order_release);
+            replacement_start_ms_.store(now_ms(), std::memory_order_release);
+            is_deleting_.store(true, std::memory_order_release);
+            monitor_cv.notify_one();
+            send_backspace_uinput(expected_backspaces_);
         }
 
         void checkForwardSpecialKey(KeyEvent& keyEvent, KeySym& currentSym) {
@@ -1200,6 +1186,7 @@ namespace fcitx {
                 sleep(1); // Wait for socket to be ready
                 continue;
             }
+            mouse_socket_fd.store(sock, std::memory_order_release);
 
             struct pollfd pfd;
             pfd.fd     = sock;
@@ -1239,6 +1226,7 @@ namespace fcitx {
                 }
             }
             close(sock);
+            mouse_socket_fd.store(-1, std::memory_order_release);
         }
     }
 
@@ -1439,6 +1427,15 @@ namespace fcitx {
         }
         appRulesPath_ = configDir + "/vmk-app-rules.conf";
         loadAppRules();
+    }
+
+    vmkEngine::~vmkEngine() {
+        stop_flag_monitor.store(true, std::memory_order_release);
+        monitor_cv.notify_all();
+        int fd = mouse_socket_fd.load(std::memory_order_acquire);
+        if (fd >= 0) {
+            close(fd);
+        }
     }
 
     void vmkEngine::reloadConfig() {

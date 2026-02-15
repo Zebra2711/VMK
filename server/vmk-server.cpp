@@ -27,8 +27,19 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <vector>
+#include <signal.h>
+#include <atomic>
 // --- VARIABLES ---
-static int uinput_fd_ = -1;
+static int               uinput_fd_ = -1;
+static std::atomic<bool> g_running{true};
+
+// signal handler
+
+static void signal_handler(int sig) {
+    if (sig == SIGTERM || sig == SIGINT) {
+        g_running.store(false);
+    }
+}
 
 // get username
 std::string get_current_username() {
@@ -160,8 +171,15 @@ int main(int argc, char* argv[]) {
     fds.push_back({mouse_server_fd, POLLIN, 0});
     fds.push_back({-1, POLLIN, 0});
 
-    int addon_fd           = -1;
-    int pending_backspaces = 0;
+    int              addon_fd           = -1;
+    int              pending_backspaces = 0;
+
+    struct sigaction sa{};
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
 
     while (true) {
         int poll_timeout = (pending_backspaces > 0) ? 1 : -1;
@@ -169,8 +187,12 @@ int main(int argc, char* argv[]) {
 
         if (ret < 0) {
             // if error, continue
-            if (errno == EINTR)
+            if (errno == EINTR) {
+                if (!g_running.load(std::memory_order_acquire)) {
+                    break;
+                }
                 continue;
+            }
             break; // real error
         }
 
@@ -275,6 +297,12 @@ int main(int argc, char* argv[]) {
     if (uinput_fd_ >= 0) {
         ioctl(uinput_fd_, UI_DEV_DESTROY);
         close(uinput_fd_);
+    }
+    if (addon_fd >= 0) {
+        close(addon_fd);
+    }
+    if (fds[3].fd >= 0) {
+        close(fds[3].fd);
     }
     close(server_fd);
     close(mouse_server_fd);

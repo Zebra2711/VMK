@@ -8,8 +8,8 @@ msgstr ""
 "Project-Id-Version: \n"
 "Report-Msgid-Bugs-To: nhktmdzhg@gmail.com\n"
 "POT-Creation-Date: 2026-02-09 15:44+0700\n"
-"PO-Revision-Date: 2026-02-03 19:05+0700\n"
-"Last-Translator: Automatically generated\n"
+"PO-Revision-Date: 2026-02-13 21:59+0700\n"
+"Last-Translator: Loc Huynh <https://github.com/hthienloc>\n"
 "Language-Team: none\n"
 "Language: vi\n"
 "MIME-Version: 1.0\n"
@@ -92,11 +92,11 @@ msgstr "Kiểm tra chính tả: Tắt"
 
 #: src/vmk.cpp:1694
 msgid "Macro: On"
-msgstr "Phím tắt: Bật"
+msgstr "Gõ tắt: Bật"
 
 #: src/vmk.cpp:1694
 msgid "Macro: Off"
-msgstr "Phím tắt: Tắt"
+msgstr "Gõ tắt: Tắt"
 
 #: src/vmk.cpp:1702
 msgid "Capitalize Macro: On"
@@ -108,11 +108,11 @@ msgstr "Gõ tắt chữ hoa: Tắt"
 
 #: src/vmk.cpp:1710
 msgid "Auto Non-VN Restore: On"
-msgstr "Tự động khôi phục với từ sai: Bật"
+msgstr "Tự động khôi phục từ không phải Tiếng Việt: Bật"
 
 #: src/vmk.cpp:1710
 msgid "Auto Non-VN Restore: Off"
-msgstr "Tự động khôi phục với từ sai: Tắt"
+msgstr "Tự động khôi phục từ không phải Tiếng Việt: Tắt"
 
 #: src/vmk.cpp:1718
 msgid "Modern Style: On"
@@ -148,7 +148,7 @@ msgstr "2. Phím xóa giả bởi uinput"
 
 #: src/vmk.cpp:1795
 msgid "3. Fake backspace by Uinput for wine apps"
-msgstr "3. Phím xóa giả, dùng cho ứng dụng wine"
+msgstr "3. Phím xóa giả bởi uinput cho các ứng dụng wine"
 
 #: src/vmk.cpp:1796
 msgid "4. Surrounding Text"

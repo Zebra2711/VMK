@@ -89,6 +89,7 @@ namespace fcitx {
         }
 
         vmkEngine(Instance* instance);
+        ~vmkEngine();
 
         void                 activate(const InputMethodEntry& entry, InputContextEvent& event) override;
         void                 deactivate(const fcitx::InputMethodEntry& entry, fcitx::InputContextEvent& event) override;

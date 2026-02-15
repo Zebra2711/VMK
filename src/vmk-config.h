@@ -133,7 +133,7 @@ namespace fcitx {
         Option<bool> spellCheck{this, "SpellCheck", _("Enable spell check"), true}; Option<bool> macro{this, "Macro", _("Enable Macro"), true};
         Option<bool>                                                                             capitalizeMacro{this, "CapitalizeMacro", _("Capitalize Macro"), true};
         Option<bool>    autoNonVnRestore{this, "AutoNonVnRestore", _("Auto restore keys with invalid words"), true};
-        Option<bool>    modernStyle{this, "ModernStyle", _("Use oà, _uý (instead of òa, úy)"), false};
+        Option<bool>    modernStyle{this, "ModernStyle", _("Use oà, _uý (instead of òa, úy)"), true};
         Option<bool>    freeMarking{this, "FreeMarking", _("Allow type with more freedom"), true};
         SubConfigOption customKeymap{this, "CustomKeymap", _("Custom Keymap"), "fcitx://config/addon/vmk/custom_keymap"};);
 
